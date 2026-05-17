@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MeshSwitch, type MeshConfig, type YRoom } from "@baditaflorin/mesh-common";
+import {
+  MeshSwitch,
+  safeUrl,
+  useStorageNamespace,
+  type MeshConfig,
+  type YRoom,
+} from "@baditaflorin/mesh-common";
 
 type Props = { room: YRoom | null; config: MeshConfig };
 
@@ -12,7 +18,7 @@ type LinkEntry = {
 };
 
 const MAX_LINKS = 30;
-const AUTO_OPEN_KEY = (prefix: string) => `${prefix}:autoOpen`;
+const AUTO_OPEN_KEY = "autoOpen";
 
 function tryParseUrl(raw: string): URL | null {
   try {
@@ -28,16 +34,15 @@ function shortFrom(id: string) {
 }
 
 export function Feature({ room, config }: Props) {
+  const ns = useStorageNamespace(config.storagePrefix);
   const [draft, setDraft] = useState("");
-  const [autoOpen, setAutoOpen] = useState(
-    () => localStorage.getItem(AUTO_OPEN_KEY(config.storagePrefix)) === "1",
-  );
+  const [autoOpen, setAutoOpen] = useState(() => ns.get<string>(AUTO_OPEN_KEY) === "1");
   const [, rerender] = useState(0);
   const seenRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    localStorage.setItem(AUTO_OPEN_KEY(config.storagePrefix), autoOpen ? "1" : "0");
-  }, [autoOpen, config.storagePrefix]);
+    ns.set(AUTO_OPEN_KEY, autoOpen ? "1" : "0");
+  }, [autoOpen, ns]);
 
   useEffect(() => {
     if (!room) return;
@@ -54,7 +59,8 @@ export function Feature({ room, config }: Props) {
           seenRef.current.add(e.id);
           // Pop-up blockers will require a prior user gesture (the auto-open
           // toggle); if blocked, the link is still in the list.
-          window.open(e.url, "_blank", "noopener");
+          const safe = safeUrl(e.url);
+          if (safe) window.open(safe, "_blank", "noopener");
         }
       }
       rerender((n) => n + 1);
