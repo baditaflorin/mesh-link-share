@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { MeshConfig, YRoom } from "@baditaflorin/mesh-common";
+import { MeshSwitch, type MeshConfig, type YRoom } from "@baditaflorin/mesh-common";
 
 type Props = { room: YRoom | null; config: MeshConfig };
 
@@ -117,10 +117,12 @@ export function Feature({ room, config }: Props) {
         </button>
       </form>
 
-      <label className="link-toggle">
-        <input type="checkbox" checked={autoOpen} onChange={(e) => setAutoOpen(e.target.checked)} />
-        <span>auto-open new links on this device</span>
-      </label>
+      <MeshSwitch
+        checked={autoOpen}
+        onCheckedChange={setAutoOpen}
+        label="auto-open new links on this device"
+        className="link-toggle"
+      />
       <p className="link-warn">
         Auto-open uses <code>window.open</code> — pop-up blockers can block it. If links don't open,
         click them once below to allow.
