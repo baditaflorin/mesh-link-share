@@ -37,12 +37,22 @@ export function Feature({ room, config }: Props) {
   const ns = useStorageNamespace(config.storagePrefix);
   const [draft, setDraft] = useState("");
   const [autoOpen, setAutoOpen] = useState(() => ns.get<string>(AUTO_OPEN_KEY) === "1");
-  const [, rerender] = useState(0);
+  const [version, rerender] = useState(0);
   const seenRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     ns.set(AUTO_OPEN_KEY, autoOpen ? "1" : "0");
   }, [autoOpen, ns]);
+
+  // Test-only handle: expose the live Yjs doc so e2e tests can seed a hostile
+  // peer's write (e.g. a `javascript:` URL) directly into the SAME shared doc
+  // both peers render from. Plain reference — no production behaviour change.
+  useEffect(() => {
+    (window as unknown as { __lsRoom?: typeof room }).__lsRoom = room;
+    return () => {
+      delete (window as unknown as { __lsRoom?: typeof room }).__lsRoom;
+    };
+  }, [room]);
 
   useEffect(() => {
     if (!room) return;
@@ -69,10 +79,19 @@ export function Feature({ room, config }: Props) {
     return () => arr.unobserve(onChange);
   }, [room, autoOpen]);
 
+  // Recompute on every Yjs `links` change. `version` is bumped by the observe
+  // callback; without it in the deps this memo caches the first snapshot and
+  // never reflects local OR remote writes. We also drop any entry whose URL
+  // fails the scheme allowlist here — incoming peer data is untrusted, so a
+  // `javascript:`/`data:` URL pushed straight into the doc by a hostile peer
+  // must never reach the render path.
   const links = useMemo(() => {
     if (!room) return [] as LinkEntry[];
-    return [...room.doc.getArray<LinkEntry>("links").toArray()].reverse();
-  }, [room]);
+    return [...room.doc.getArray<LinkEntry>("links").toArray()]
+      .filter((e) => safeUrl(e.url) !== null)
+      .reverse();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room, version]);
 
   if (!room) {
     return (
@@ -137,17 +156,21 @@ export function Feature({ room, config }: Props) {
       <ul className="link-list">
         {links.map((e) => {
           const mine = e.fromPeer === room.peerId;
-          let host = e.url;
+          // `links` is already scheme-filtered, but normalize again at render
+          // time so the rendered href is the validated URL, never the raw
+          // peer-supplied string. `safe` is non-null here by construction.
+          const safe = safeUrl(e.url) ?? "";
+          let host = safe;
           try {
-            host = new URL(e.url).host;
+            host = new URL(safe).host;
           } catch {
             // fall through
           }
           return (
             <li key={e.id} className={`link-entry ${mine ? "is-mine" : ""}`}>
-              <a href={e.url} target="_blank" rel="noreferrer noopener" className="link-url">
+              <a href={safe} target="_blank" rel="noreferrer noopener" className="link-url">
                 {host}
-                <span className="link-full">{e.url}</span>
+                <span className="link-full">{safe}</span>
               </a>
               <span className="link-meta">
                 {mine ? "you" : `peer-${shortFrom(e.fromPeer)}`} ·{" "}
